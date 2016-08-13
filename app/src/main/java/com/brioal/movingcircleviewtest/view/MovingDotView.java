@@ -118,7 +118,7 @@ public class MovingDotView extends ViewGroup {
         mCenterDot.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View view) {
-                if (isCheaned) {
+                if (isChanged) {
                     backClean();
                 } else {
                     startClean();
@@ -130,12 +130,12 @@ public class MovingDotView extends ViewGroup {
 
     public void startClean() {
         startAnimation(0, 1);
-        isCheaned = true;
+        isChanged = true;
     }
 
     public void backClean() {
         startAnimation(1, 0);
-        isCheaned = false;
+        isChanged = false;
     }
 
     public void startAnimation(float from, float to) {
@@ -158,7 +158,7 @@ public class MovingDotView extends ViewGroup {
 
     }
 
-    private boolean isCheaned = false;
+    private boolean isChanged = false;
 
 
     @Override
