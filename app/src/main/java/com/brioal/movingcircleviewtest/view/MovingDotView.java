@@ -1,16 +1,18 @@
 package com.brioal.movingcircleviewtest.view;
 
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
-import android.graphics.drawable.Drawable;
-import android.os.Handler;
-import android.os.Message;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.animation.AccelerateDecelerateInterpolator;
 
 import com.brioal.movingcircleviewtest.R;
+import com.brioal.movingcircleviewtest.view.exceptions.SizeNotDeterminedException;
+import com.brioal.movingcircleviewtest.view.listener.OnProgressChangeListener;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -20,7 +22,7 @@ import java.util.Random;
  * Created by Brioal on 2016/8/12.
  */
 
-public class MovingDotView extends View {
+public class MovingDotView extends ViewGroup {
     private List<Dot> mDots;
     private int mCenterDotRadius;
     private int mCenterDotColor;
@@ -31,7 +33,16 @@ public class MovingDotView extends View {
     private int mMaxDotRadius;
     private int mMinDotRadius;
     private float mConverSpeed;
+    private int mWidth;
+    private int mProgress;
+    private int mTextSize;
+    private int mSpeed;
+    private CenterDot mCenterDot;
+    private OnProgressChangeListener mChangeListener;
 
+    public void setChangeListener(OnProgressChangeListener changeListener) {
+        mChangeListener = changeListener;
+    }
 
     public MovingDotView(Context context) {
         this(context, null);
@@ -39,16 +50,15 @@ public class MovingDotView extends View {
 
     public MovingDotView(Context context, AttributeSet attrs) {
         super(context, attrs);
+        setWillNotDraw(true);
         init();
     }
 
-    private Handler mHandler = new Handler() {
-        @Override
-        public void handleMessage(Message msg) {
-            super.handleMessage(msg);
-            invalidate();
-        }
-    };
+    @Override
+    protected void onLayout(boolean b, int i, int i1, int i2, int i3) {
+        getChildAt(0).layout(getWidth() / 2 - mCenterDotRadius, getWidth() / 2 - mCenterDotRadius, getWidth() / 2 + mCenterDotRadius, getWidth() / 2 + mCenterDotRadius);
+    }
+
 
     private void init() {
         mDots = new ArrayList<>();
@@ -64,6 +74,36 @@ public class MovingDotView extends View {
         mBoundOffset = 50;
         mMaxDotRadius = 20;
         mMinDotRadius = 10;
+        mProgress = 50;
+        mTextSize = 150;
+        mSpeed = 10;
+
+    }
+
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+        //假设情况是用户至少会给宽或者高指定一个确定的值,否则抛出异常
+        int widthSize = MeasureSpec.getSize(widthMeasureSpec);
+        int widthMode = MeasureSpec.getMode(widthMeasureSpec);
+
+        int heightSize = MeasureSpec.getSize(heightMeasureSpec);
+        int heightMode = MeasureSpec.getMode(heightMeasureSpec);
+
+        if (widthMode != MeasureSpec.EXACTLY && heightMode != MeasureSpec.EXACTLY) {
+            try {
+                throw new SizeNotDeterminedException("宽高不能都为wrap_content");
+            } catch (SizeNotDeterminedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        mWidth = Math.min(widthSize, heightSize);
+        setMeasuredDimension(mWidth, mWidth);
+        Dot.WIDTH = mWidth;
+        Dot.SPEED = 1;
+        Dot.sMaxDotRadius = 20;
+        Dot.sMinDotRadius = 10;
     }
 
     @Override
@@ -71,81 +111,80 @@ public class MovingDotView extends View {
         super.onSizeChanged(w, h, oldw, oldh);
         mCenterDotRadius = w / 4;
         for (int i = 0; i < 10; i++) {
-            mDots.add(setRightPosition());
+            mDots.add(new Dot());
         }
-        mConverSpeed = 1; //每毫秒多少像素
-        new Thread(new Runnable() {
+        mCenterDot = new CenterDot(getContext(), mCenterDotRadius * 2);
+        mCenterDot.setClickable(true);
+        mCenterDot.setOnClickListener(new OnClickListener() {
             @Override
-            public void run() {
-                while (true) {
-                    for (int i = 0; i < mDots.size(); i++) {
-                        Dot dot = mDots.get(i);
-                        double x = getWidth() / 2 - dot.getX();
-                        double y = getHeight() / 2 - dot.getY();
-                        double z = Math.sqrt(x * x + y * y);
-                        if (z + dot.getRadius() < mCenterDotRadius / 4) {
-                            mDots.set(i, setRightPosition());
-                        } else {
-                            double xoffset = x * mConverSpeed / z;
-                            double yoffset = y * mConverSpeed / z;
-                            dot.setX((float) (dot.getX() + xoffset));
-                            dot.setY((float) (dot.getY() + yoffset));
-                        }
-                    }
-                    mHandler.sendEmptyMessage(0);
-                    try {
-                        Thread.sleep(20);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
+            public void onClick(View view) {
+                if (isCheaned) {
+                    backClean();
+                } else {
+                    startClean();
                 }
-
             }
-        }).start();
+        });
+        addView(mCenterDot);
     }
 
-    public double getZ(Dot dot) {
-        double x = getWidth() / 2 - dot.getX();
-        double y = getHeight() / 2 - dot.getY();
-        double z = Math.sqrt(x * x + y * y);
-        return z;
+    public void startClean() {
+        startAnimation(0, 1);
+        isCheaned = true;
     }
+
+    public void backClean() {
+        startAnimation(1, 0);
+        isCheaned = false;
+    }
+
+    public void startAnimation(float from, float to) {
+        ValueAnimator valueAnimator = ValueAnimator.ofFloat(from, to);
+        valueAnimator.setDuration(1500);
+        valueAnimator.setInterpolator(new AccelerateDecelerateInterpolator());
+        valueAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override
+            public void onAnimationUpdate(ValueAnimator valueAnimator) {
+                float progress = (float) valueAnimator.getAnimatedValue();
+                if (mChangeListener != null) {
+                    mChangeListener.onProgressChanged(progress);
+                }
+                Dot.SPEED = (int) (1 + progress * 3);
+                mCenterDot.setAnimationPogress(progress);
+                mCenterDot.setProgress((int) (80-progress*40));
+            }
+        });
+        valueAnimator.start();
+
+    }
+
+    private boolean isCheaned = false;
 
 
     @Override
     protected void onDraw(Canvas canvas) {
         mPaint.setStyle(Paint.Style.FILL);
         mPaint.setColor(mDotColor);
+        canvas.save();
+        canvas.translate(getWidth() / 2, getHeight() / 2);
         for (int j = 0; j < mDots.size(); j++) {
             Dot dot = mDots.get(j);
-            float progress = (float) ((getZ(dot) - mCenterDotRadius) / mCenterDotRadius);//1~0
-            Log.i("Progress", progress + "");
+            float progress = (float) ((dot.getZ() - mCenterDotRadius) / (new Dot(-getWidth() / 2, -getWidth() / 2, 0).getZ() - mCenterDotRadius));//1~0
             if (progress > 1) {
                 progress = 1;
             }
-            if (progress <0) {
+            if (progress < 0) {
                 progress = 0;
             }
-            mPaint.setAlpha((int) ((1 - progress) * 205 + 50));
+            Log.i("Progress", progress + "");
+            int alpha = (int) ((1 - progress) * 200 + 75);
+            mPaint.setAlpha(alpha > 255 ? 255 : alpha);
             canvas.drawCircle(dot.getX(), dot.getY(), dot.getRadius(), mPaint);
+            dot.checkAndChange();
         }
-        canvas.save();
-        canvas.translate(getWidth() / 2, getHeight() / 2);
-        Drawable drawable = getResources().getDrawable(R.drawable.ic_cneter_dot);
-        drawable.setBounds(-mCenterDotRadius, -mCenterDotRadius, mCenterDotRadius, mCenterDotRadius);
-        drawable.draw(canvas);
+        postInvalidateDelayed(mSpeed);
         canvas.restore();
 
     }
 
-    public Dot setRightPosition() {
-        int radius = (int) (mRandom.nextFloat() * (mMaxDotRadius - mMinDotRadius) + mMinDotRadius);
-        int x = (mRandom.nextInt((getWidth() - 10 - 2 * radius)) + 5 + radius);
-        int y = mRandom.nextInt((getHeight() - 10 - 2 * radius)) + 5 + radius;
-        if (mBoundOffset - radius < x && x < getWidth() - mBoundOffset + radius && y > mBoundOffset - radius && y < getHeight() - mBoundOffset + radius) {
-            return setRightPosition();
-        } else {
-            return new Dot(x, y, radius);
-        }
-    }
 }
